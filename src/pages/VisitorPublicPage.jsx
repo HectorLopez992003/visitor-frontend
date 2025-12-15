@@ -9,7 +9,6 @@ const VisitorPublicPage = ({ addVisitor }) => {
   const [qrData, setQrData] = useState("");
   const canvasRef = useRef(null);
 
-  // Generate QR and send visitor to main App
   const handleGenerateQR = () => {
     if (!visitorName || !visitorID || !office || !purpose) {
       alert("Please fill in all fields.");
@@ -24,18 +23,15 @@ const VisitorPublicPage = ({ addVisitor }) => {
       generatedAt: new Date().toISOString(),
       timeIn: null,
       timeOut: null,
-      qrData: "", // will be filled after QR generation
     };
 
     const qrJson = JSON.stringify(payload);
     setQrData(qrJson);
-    payload.qrData = qrJson;
 
-    // Send visitor to App.js state
+    // Push data to main system
     if (addVisitor) addVisitor(payload);
   };
 
-  // Download the QR as PNG
   const handleDownload = () => {
     const canvas = canvasRef.current || document.getElementById("qr-canvas");
     if (!canvas) return;
@@ -48,7 +44,6 @@ const VisitorPublicPage = ({ addVisitor }) => {
     a.click();
   };
 
-  // Clear form and QR
   const handleClear = () => {
     setVisitorName("");
     setVisitorID("");
@@ -60,9 +55,7 @@ const VisitorPublicPage = ({ addVisitor }) => {
 
   return (
     <div className="max-w-2xl mx-auto p-6 bg-white rounded-lg shadow-md mt-10">
-      <h1 className="text-2xl font-bold mb-4 text-center">
-        Visitor Registration
-      </h1>
+      <h1 className="text-2xl font-bold mb-4 text-center">Visitor Registration</h1>
 
       <div className="grid gap-3">
         <input
