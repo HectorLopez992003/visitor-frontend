@@ -1,7 +1,8 @@
 import React, { useState } from "react";
 import { QRCodeCanvas } from "qrcode.react";
+import { API_BASE } from "../api"; // adjust path if needed
 
-const VisitorRegistration = ({ addVisitor }) => {
+const VisitorRegistration = () => {
   const [name, setName] = useState("");
   const [visitorID, setVisitorID] = useState("");
   const [office, setOffice] = useState("");
@@ -17,6 +18,31 @@ const VisitorRegistration = ({ addVisitor }) => {
     name && visitorID && office && purpose && scheduledDate && scheduledTime && idFile
       ? JSON.stringify({ visitorID, name })
       : "";
+
+  // API call to add visitor
+  const addVisitor = async (visitorData, callback) => {
+    try {
+      const res = await fetch(`${API_BASE}/visitors`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(visitorData),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        alert(data.error || "Failed to register visitor");
+        return;
+      }
+
+      callback(); // reset form
+    } catch (err) {
+      console.error("Error registering visitor:", err);
+      alert("Server error: Failed to register visitor");
+    }
+  };
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -65,7 +91,6 @@ const VisitorRegistration = ({ addVisitor }) => {
         Visitor Registration
       </h1>
 
-      {/* Success message */}
       {success && (
         <div className="mb-4 p-3 bg-green-100 text-green-800 font-semibold text-center rounded">
           Visitor registered successfully!
@@ -74,7 +99,6 @@ const VisitorRegistration = ({ addVisitor }) => {
 
       <form onSubmit={handleSubmit} className="space-y-6">
         <div className="grid grid-cols-1 gap-4">
-          {/* Name */}
           <div className="flex flex-col">
             <label className="font-semibold mb-1">Name</label>
             <input
@@ -85,7 +109,6 @@ const VisitorRegistration = ({ addVisitor }) => {
             />
           </div>
 
-          {/* Visitor ID - numbers only */}
           <div className="flex flex-col">
             <label className="font-semibold mb-1">Visitor ID</label>
             <input
@@ -97,7 +120,6 @@ const VisitorRegistration = ({ addVisitor }) => {
             />
           </div>
 
-          {/* Office - dropdown */}
           <div className="flex flex-col">
             <label className="font-semibold mb-1">Office</label>
             <select
@@ -112,7 +134,6 @@ const VisitorRegistration = ({ addVisitor }) => {
             </select>
           </div>
 
-          {/* Purpose */}
           <div className="flex flex-col">
             <label className="font-semibold mb-1">Purpose</label>
             <input
@@ -123,7 +144,6 @@ const VisitorRegistration = ({ addVisitor }) => {
             />
           </div>
 
-          {/* Scheduled Date */}
           <div className="flex flex-col">
             <label className="font-semibold mb-1">Scheduled Date</label>
             <input
@@ -134,7 +154,6 @@ const VisitorRegistration = ({ addVisitor }) => {
             />
           </div>
 
-          {/* Scheduled Time */}
           <div className="flex flex-col">
             <label className="font-semibold mb-1">Scheduled Time</label>
             <input
@@ -145,7 +164,6 @@ const VisitorRegistration = ({ addVisitor }) => {
             />
           </div>
 
-          {/* Upload ID */}
           <div className="flex flex-col">
             <label className="font-semibold mb-1">Upload ID</label>
             <input
@@ -157,7 +175,6 @@ const VisitorRegistration = ({ addVisitor }) => {
           </div>
         </div>
 
-        {/* ID Preview with border */}
         {idFile && (
           <div className="flex justify-center mt-2">
             <img
@@ -168,7 +185,6 @@ const VisitorRegistration = ({ addVisitor }) => {
           </div>
         )}
 
-        {/* QR Code with border */}
         {qrValue && (
           <div className="flex justify-center mt-2">
             <div className="border-2 border-gray-300 rounded-lg p-2">
