@@ -3,21 +3,21 @@ import { QRCodeCanvas } from "qrcode.react";
 
 const VisitorPublicPage = ({ addVisitor }) => {
   const [visitorName, setVisitorName] = useState("");
-  const [visitorID, setVisitorID] = useState("");
+  const [contactNumber, setContactNumber] = useState("");
   const [office, setOffice] = useState("");
   const [purpose, setPurpose] = useState("");
   const [qrData, setQrData] = useState("");
   const canvasRef = useRef(null);
 
   const handleGenerateQR = () => {
-    if (!visitorName || !visitorID || !office || !purpose) {
+    if (!visitorName || !contactNumber || !office || !purpose) {
       alert("Please fill in all fields.");
       return;
     }
 
     const payload = {
       visitorName,
-      visitorID,
+      contactNumber,
       office,
       purpose,
       generatedAt: new Date().toISOString(),
@@ -46,7 +46,7 @@ const VisitorPublicPage = ({ addVisitor }) => {
 
   const handleClear = () => {
     setVisitorName("");
-    setVisitorID("");
+    setContactNumber("");
     setOffice("");
     setPurpose("");
     setQrData("");
@@ -68,8 +68,8 @@ const VisitorPublicPage = ({ addVisitor }) => {
         <input
           type="text"
           placeholder="Visitor ID"
-          value={visitorID}
-          onChange={(e) => setVisitorID(e.target.value)}
+          value={contactNumber}
+          onChange={(e) => setContactNumber(e.target.value)}
           className="w-full border p-2 rounded focus:outline-none focus:ring-2 focus:ring-blue-400"
         />
         <input

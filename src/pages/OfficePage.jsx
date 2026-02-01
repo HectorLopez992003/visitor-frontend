@@ -1,10 +1,14 @@
 import React, { useState, useEffect, useRef } from "react";
 import IDPreviewModal from "../components/IDPreviewModal";
 import { Html5Qrcode } from "html5-qrcode";
+import { API_BASE } from "../api";
 
-const OfficePage = ({ visitors, startProcessing, markProcessed, goToLogin }) => {
+const OfficePage = ({ goToLogin, newVisitor }) => {
+  // -------------------- STATES --------------------
+  const [localVisitors, setLocalVisitors] = useState([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [filterStatus, setFilterStatus] = useState("All");
+  const [filterOffice, setFilterOffice] = useState("All");
   const [showTodayOnly, setShowTodayOnly] = useState(false);
   const [filterDate, setFilterDate] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
@@ -16,14 +20,39 @@ const OfficePage = ({ visitors, startProcessing, markProcessed, goToLogin }) => 
   const [scannerInstance, setScannerInstance] = useState(null);
   const [lastScanTimes, setLastScanTimes] = useState({});
   const [toast, setToast] = useState(null);
+  const [loading, setLoading] = useState(true);
   const scannerRef = useRef(null);
 
+  // Pagination
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 6;
+
+  // Audit Trail & Reports
+  const [auditTrail, setAuditTrail] = useState([]);
+  const [reportData, setReportData] = useState([]);
+
+  // User Management
+  const [users, setUsers] = useState([]);
+  const [userModalOpen, setUserModalOpen] = useState(false);
+  const [editingUser, setEditingUser] = useState(null);
+
+  // -------------------- LOGIN TOKEN --------------------
+  const token = localStorage.getItem("token"); // Assuming you saved token on login
+  const userRole = localStorage.getItem("role"); // "admin", "guard", etc.
+
+  useEffect(() => {
+    if (!token) goToLogin(); // redirect if not logged in
+  }, []);
+
+  // -------------------- TOAST --------------------
   const showToast = (message, type = "success") => {
     setToast({ message, type });
     setTimeout(() => setToast(null), 3000);
   };
 
+  // -------------------- UTILS --------------------
   const highlightMatch = (text) => {
+    if (!text) return "-";
     if (!searchTerm) return text;
     const regex = new RegExp(`(${searchTerm})`, "gi");
     return text.split(regex).map((part, index) =>
@@ -35,15 +64,31 @@ const OfficePage = ({ visitors, startProcessing, markProcessed, goToLogin }) => 
     );
   };
 
+  const isOverdue = (v) => {
+    if (v.officeProcessedTime && !v.timeOut) {
+      const now = Date.now();
+      const processedTime = new Date(v.officeProcessedTime).getTime();
+      return now - processedTime > 30 * 60 * 1000;
+    }
+    return false;
+  };
+
   const getStatusBadge = (v) => {
+    if (isOverdue(v))
+      return <span className="px-2 py-1 rounded-full bg-red-300 text-red-900 font-bold text-sm">Overdue</span>;
     if (v.processed)
       return <span className="px-2 py-1 rounded-full bg-green-300 text-green-900 font-bold text-sm">Processed</span>;
     if (v.processingStartedTime)
       return <span className="px-2 py-1 rounded-full bg-blue-300 text-blue-900 font-bold text-sm">Processing</span>;
+    if (v.accepted === true)
+      return <span className="px-2 py-1 rounded-full bg-green-200 text-green-900 font-bold text-sm">Accepted</span>;
+    if (v.accepted === false)
+      return <span className="px-2 py-1 rounded-full bg-red-200 text-red-900 font-bold text-sm">Declined</span>;
     return <span className="px-2 py-1 rounded-full bg-yellow-300 text-yellow-900 font-bold text-sm">Pending</span>;
   };
 
   const getCardBackground = (v) => {
+    if (isOverdue(v)) return "bg-red-50";
     if (v.processed) return "bg-green-50";
     if (v.processingStartedTime) return "bg-blue-50";
     return "bg-yellow-50";
@@ -69,18 +114,157 @@ const OfficePage = ({ visitors, startProcessing, markProcessed, goToLogin }) => 
 
   const isToday = (datetime) => datetime ? new Date(datetime).toDateString() === new Date().toDateString() : false;
 
-  const filteredVisitors = visitors.filter((v) => {
+  // -------------------- FETCH DATA --------------------
+  const fetchVisitors = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/visitors`, { headers: { Authorization: `Bearer ${token}` } });
+      if (!res.ok) throw new Error("Failed to fetch visitors");
+      const data = await res.json();
+      setLocalVisitors(data);
+    } catch (err) {
+      console.error(err);
+      showToast("Failed to load visitors", "error");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchAuditTrail = async () => {
+    if (userRole !== "admin" && userRole !== "officer") return;
+    try {
+      const res = await fetch(`${API_BASE}/audit-trail`, { headers: { Authorization: `Bearer ${token}` } });
+      if (!res.ok) throw new Error("Failed to fetch audit trail");
+      const data = await res.json();
+      setAuditTrail(data);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const fetchUsers = async () => {
+    if (userRole !== "admin") return;
+    try {
+      const res = await fetch(`${API_BASE}/users`, { headers: { Authorization: `Bearer ${token}` } });
+      if (!res.ok) throw new Error("Failed to fetch users");
+      const data = await res.json();
+      setUsers(data);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  useEffect(() => {
+    fetchVisitors();
+    fetchAuditTrail();
+    fetchUsers();
+  }, []);
+
+  useEffect(() => {
+    if (newVisitor) setLocalVisitors(prev => [newVisitor, ...prev]);
+  }, [newVisitor]);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      fetchVisitors();
+      fetchAuditTrail();
+    }, 10000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // -------------------- PROCESSING --------------------
+  const startProcessing = async (id) => {
+    try {
+      const res = await fetch(`${API_BASE}/visitors/${id}/start-processing`, {
+        method: "PUT",
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (!res.ok) throw new Error("Failed to start processing");
+      const updatedVisitor = await res.json();
+      setLocalVisitors(prev => prev.map(v => v._id === updatedVisitor._id ? updatedVisitor : v));
+      showToast(`✅ Processing Started: ${updatedVisitor.name}`);
+    } catch (err) {
+      console.error(err);
+      showToast("Failed to start processing.", "error");
+    }
+  };
+
+  const markProcessed = async (id) => {
+    try {
+      const res = await fetch(`${API_BASE}/visitors/${id}/office-processed`, {
+        method: "PUT",
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (!res.ok) throw new Error("Failed to mark as processed");
+      const updatedVisitor = await res.json();
+      setLocalVisitors(prev => prev.map(v => v._id === updatedVisitor._id ? updatedVisitor : v));
+      showToast(`✅ Processed: ${updatedVisitor.name}`);
+    } catch (err) {
+      console.error(err);
+      showToast("Failed to mark as processed.", "error");
+    }
+  };
+
+  // ---------------- ACCEPT / DECLINE ----------------
+  const handleAcceptDecline = async (id, accept) => {
+    try {
+      const res = await fetch(`${API_BASE}/visitors/${id}/accept-decline`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ accepted: accept }),
+      });
+      if (!res.ok) throw new Error("Failed to update visitor status");
+      const updatedVisitor = await res.json();
+      setLocalVisitors(prev => prev.map(v => v._id === updatedVisitor._id ? updatedVisitor : v));
+      showToast(`Visitor ${updatedVisitor.name} ${accept ? "Accepted ✅" : "Declined ❌"}`);
+
+      // Send email notification
+      await fetch(`${API_BASE}/visitors/${id}/notify`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ accepted: accept, email: updatedVisitor.email, name: updatedVisitor.name })
+      });
+    } catch (err) {
+      console.error(err);
+      showToast("Failed to update visitor status", "error");
+    }
+  };
+
+  // -------------------- USER MANAGEMENT FUNCTIONS --------------------
+  const toggleUserStatus = async (userId) => {
+    try {
+      const user = users.find(u => u._id === userId);
+      if (!user) return;
+      const res = await fetch(`${API_BASE}/users/${userId}/toggle-status`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ active: !user.active }),
+      });
+      if (!res.ok) throw new Error("Failed to toggle user status");
+      const updatedUser = await res.json();
+      setUsers(prev => prev.map(u => u._id === updatedUser._id ? updatedUser : u));
+      showToast(`User ${updatedUser.name} is now ${updatedUser.active ? "Active ✅" : "Inactive ❌"}`);
+    } catch (err) {
+      console.error(err);
+      showToast("Failed to update user status", "error");
+    }
+  };
+
+  // -------------------- FILTERED VISITORS --------------------
+  const filteredVisitors = localVisitors.filter((v) => {
     const matchesSearch =
-      v.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      v.visitorID.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      v.office.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      v.purpose.toLowerCase().includes(searchTerm.toLowerCase());
+      v.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      v.contactNumber?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      v.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      v.office?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      v.purpose?.toLowerCase().includes(searchTerm.toLowerCase());
 
     let matchesStatus = true;
-    if (filterStatus === "Pending") matchesStatus = !v.processingStartedTime && !v.processed;
-    if (filterStatus === "Processing") matchesStatus = v.processingStartedTime && !v.processed;
+    if (filterStatus === "Pending") matchesStatus = !v.processingStartedTime && !v.processed && !isOverdue(v);
+    if (filterStatus === "Processing") matchesStatus = v.processingStartedTime && !v.processed && !isOverdue(v);
     if (filterStatus === "Processed") matchesStatus = v.processed;
+    if (filterStatus === "Overdue") matchesStatus = isOverdue(v);
 
+    const matchesOffice = filterOffice === "All" ? true : v.office?.toLowerCase() === filterOffice.toLowerCase();
     const matchesToday = showTodayOnly ? isToday(v.timeIn) : true;
     const matchesDate = filterDate
       ? v.timeIn
@@ -90,10 +274,13 @@ const OfficePage = ({ visitors, startProcessing, markProcessed, goToLogin }) => 
         : false
       : true;
 
-    return matchesSearch && matchesStatus && matchesToday && matchesDate;
+    return matchesSearch && matchesStatus && matchesOffice && matchesToday && matchesDate;
   });
 
-  // SCANNER FUNCTIONS
+  const totalPages = Math.ceil(filteredVisitors.length / itemsPerPage);
+  const paginatedVisitors = filteredVisitors.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+
+  // -------------------- QR SCANNER --------------------
   const startScanner = () => { if (scanning) return; setScanning(true); };
   const stopScanner = () => {
     if (scannerInstance) {
@@ -111,33 +298,29 @@ const OfficePage = ({ visitors, startProcessing, markProcessed, goToLogin }) => 
         { fps: 25, qrbox: { width: 300, height: 300 }, experimentalFeatures: { useBarCodeDetectorIfSupported: true }, disableFlip: false, verbose: true },
         (decodedText) => {
           let visitorData;
-          try { visitorData = JSON.parse(decodedText); } catch { visitorData = { visitorID: decodedText }; }
-
-          const visitor = visitors.find((v) => v.visitorID === visitorData.visitorID);
-          if (!visitor) { showToast("QR does not match any visitor!", "error"); return; }
+          try { visitorData = JSON.parse(decodedText); } catch { visitorData = { contactNumber: decodedText }; }
+          const visitor = localVisitors.find((v) => v.contactNumber === visitorData.contactNumber && v.accepted);
+          if (!visitor) { showToast("QR does not match any accepted visitor!", "error"); return; }
 
           const now = Date.now();
-          const lastScan = lastScanTimes[visitor.visitorID] || 0;
+          const lastScan = lastScanTimes[visitor.contactNumber] || 0;
           if (now - lastScan < 2000) return;
-          setLastScanTimes({ ...lastScanTimes, [visitor.visitorID]: now });
+          setLastScanTimes({ ...lastScanTimes, [visitor.contactNumber]: now });
 
-          if (!visitor.processingStartedTime) {
-            startProcessing(visitor._id);
-            showToast(`✅ Processing Started: ${visitor.name}`);
-          } else if (!visitor.processed) {
-            markProcessed(visitor._id);
-            showToast(`✅ Processed: ${visitor.name}`);
-          } else {
-            showToast(`${visitor.name} is already completed.`, "info");
-          }
+          if (!visitor.processingStartedTime) startProcessing(visitor._id);
+          else if (!visitor.processed) markProcessed(visitor._id);
+          else showToast(`${visitor.name} is already completed.`, "info");
 
           html5QrCode.stop().finally(() => { setScanning(false); setScannerInstance(null); });
         },
         (error) => console.warn("QR Scan Error:", error)
       ).catch((err) => { console.error("Unable to start QR scan:", err); setScanning(false); });
     }
-  }, [scanning]);
+  }, [scanning, localVisitors]);
 
+  if (loading) return <div className="text-center mt-20 font-bold text-gray-700">Loading visitors...</div>;
+
+  // -------------------- MAIN RETURN --------------------
   return (
     <div className="max-w-7xl mx-auto p-6 bg-gray-50 min-h-screen relative">
       {/* TOAST */}
@@ -149,126 +332,137 @@ const OfficePage = ({ visitors, startProcessing, markProcessed, goToLogin }) => 
 
       {/* SCANNER PANEL */}
       <div className="fixed top-24 right-6 z-40 w-60 flex flex-col items-center gap-2">
-        <button
-          onClick={startScanner}
-          disabled={scanning}
-          className="bg-blue-600 text-white px-4 py-2 rounded shadow hover:bg-blue-700 transition font-semibold text-sm w-full"
-        >
+        <button onClick={startScanner} disabled={scanning} className="bg-blue-600 text-white px-4 py-2 rounded shadow hover:bg-blue-700 transition font-semibold text-sm w-full">
           {scanning ? "Scanning..." : "Start Scanner"}
         </button>
-
-        {scanning && (
-          <>
-            <button
-              onClick={stopScanner}
-              className="bg-red-600 text-white px-4 py-2 rounded shadow hover:bg-red-700 transition font-semibold text-sm w-full"
-            >
-              Stop Scanner
-            </button>
-
-            <div
-              ref={scannerRef}
-              id="office-qr-reader"
-              className="w-full h-56 overflow-hidden rounded border"
-            />
-            <style>{`
-              #office-qr-reader video {
-                width: 100% !important;
-                height: 100% !important;
-                object-fit: cover !important;
-              }
-            `}</style>
-          </>
-        )}
+        {scanning && <>
+          <button onClick={stopScanner} className="bg-red-600 text-white px-4 py-2 rounded shadow hover:bg-red-700 transition font-semibold text-sm w-full">Stop Scanner</button>
+          <div ref={scannerRef} id="office-qr-reader" className="w-full h-56 overflow-hidden rounded border" />
+          <style>{`#office-qr-reader video { width: 100% !important; height: 100% !important; object-fit: cover !important; }`}</style>
+        </>}
       </div>
 
-      {/* OFFICE PAGE UI */}
-      <h1 className="text-3xl font-bold mb-6 text-center text-gray-800">Office Dashboard</h1>
-
+      {/* FILTERS & LOGOUT */}
       <div className="flex flex-col md:flex-row justify-between items-center mb-6 gap-2">
-        <button
-          onClick={goToLogin}
-          className="bg-gray-200 text-black px-4 py-2 rounded hover:bg-gray-300 font-semibold"
-        >
-          Logout
-        </button>
-
-        <input
-          type="text"
-          placeholder="Search by Name, ID, Office, or Purpose"
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          className="border p-2 rounded w-full md:w-64 font-semibold"
-        />
-
-        <input
-          type="date"
-          value={filterDate}
-          onChange={(e) => setFilterDate(e.target.value)}
-          className="border p-2 rounded w-full md:w-48 font-semibold"
-        />
-
-        <select
-          value={filterStatus}
-          onChange={(e) => setFilterStatus(e.target.value)}
-          className="border p-2 rounded w-full md:w-48 font-semibold"
-        >
+        <button onClick={goToLogin} className="bg-gray-200 text-black px-4 py-2 rounded hover:bg-gray-300 font-semibold">Logout</button>
+        <input type="text" placeholder="Search..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="border p-2 rounded w-full md:w-64 font-semibold" />
+        <input type="date" value={filterDate} onChange={(e) => setFilterDate(e.target.value)} className="border p-2 rounded w-full md:w-48 font-semibold" />
+        <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)} className="border p-2 rounded w-full md:w-48 font-semibold">
           <option value="All">All Status</option>
           <option value="Pending">Pending</option>
           <option value="Processing">Processing</option>
           <option value="Processed">Processed</option>
+          <option value="Overdue">Overdue</option>
         </select>
-
+        <select value={filterOffice} onChange={(e) => setFilterOffice(e.target.value)} className="border p-2 rounded w-full md:w-48 font-semibold">
+          <option value="All">All Offices</option>
+          <option value="Registrar">Registrar</option>
+          <option value="Guidance">Guidance</option>
+          <option value="Cashier">Cashier</option>
+          <option value="Dean">Dean</option>
+          <option value="Library">Library</option>
+        </select>
         <label className="flex items-center gap-2 cursor-pointer font-semibold">
-          <input
-            type="checkbox"
-            checked={showTodayOnly}
-            onChange={() => setShowTodayOnly(!showTodayOnly)}
-            className="w-4 h-4 accent-blue-500"
-          />
-          Today Only
+          <input type="checkbox" checked={showTodayOnly} onChange={() => setShowTodayOnly(!showTodayOnly)} className="w-4 h-4 accent-blue-500" /> Today Only
         </label>
       </div>
 
       {/* VISITOR CARDS */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-        {filteredVisitors.map((v) => (
+        {paginatedVisitors.map((v) => (
           <div key={v._id} className={`rounded-lg shadow-lg p-4 flex flex-col gap-2 border ${getCardBackground(v)} transition transform hover:-translate-y-1 hover:shadow-2xl`}>
+            {/* ACCEPT / DECLINE */}
+            {v.accepted === null && !v.processingStartedTime && !v.processed && !isOverdue(v) && (
+              <div className="flex justify-end gap-2 mb-2">
+                <button onClick={() => handleAcceptDecline(v._id, true)} className="bg-green-600 text-white px-3 py-1 rounded font-bold">✔</button>
+                <button onClick={() => handleAcceptDecline(v._id, false)} className="bg-red-600 text-white px-3 py-1 rounded font-bold">✖</button>
+              </div>
+            )}
             <h2 className="text-xl font-bold text-black">{highlightMatch(v.name)}</h2>
-            <p className="text-gray-800 font-semibold">{highlightMatch(v.visitorID)}</p>
+            <p className="text-gray-800 font-semibold">{highlightMatch(v.contactNumber)}</p>
             <p className="text-gray-800 font-semibold"><span className="font-bold">Office:</span> {highlightMatch(v.office)}</p>
             <p className="text-gray-800 font-semibold"><span className="font-bold">Purpose:</span> {highlightMatch(v.purpose)}</p>
             <p className="text-gray-800 font-semibold"><span className="font-bold">Scheduled Date:</span> {v.scheduledDate ? formatDateMMDDYYYY(v.scheduledDate) : "-"}</p>
-            <p className="text-gray-800 font-semibold"><span className="font-bold">Scheduled Time:</span> {v.scheduledTime ? formatTime(v.scheduledTime) : "-"}</p>
-            <p className="text-gray-800 font-semibold"><span className="font-bold">Date In:</span> {v.timeIn ? formatDateMMDDYYYY(v.timeIn) : "-"}</p>
-            <p className="text-gray-800 font-semibold"><span className="font-bold">Processing Started:</span> {formatTime(v.processingStartedTime)}</p>
-            <p className="text-gray-800 font-semibold"><span className="font-bold">Office Processed:</span> {formatTime(v.officeProcessedTime)}</p>
             <div className="my-3">{getStatusBadge(v)}</div>
-
-            {v.idFile && (
-              <div className="relative w-full h-32 overflow-hidden rounded border cursor-pointer group"
-                onClick={() => { setModalImage(v.idFile); setModalName(v.name); setModalOpen(true); }}
-              >
-                <img src={v.idFile} alt="ID" className="w-full h-full object-contain transition group-hover:scale-105"/>
-              </div>
-            )}
-
-            {!v.processingStartedTime && !v.processed ? (
-              <button onClick={() => startProcessing(v._id)} className="bg-blue-600 text-white px-3 py-1 rounded w-full font-bold mt-3">
-                Start Processing
-              </button>
-            ) : !v.processed ? (
-              <button onClick={() => markProcessed(v._id)} className="bg-green-600 text-white px-3 py-1 rounded w-full font-bold mt-3">
-                Done Processing
-              </button>
-            ) : (
-              <p className="text-center font-bold mt-3">Completed</p>
-            )}
           </div>
         ))}
       </div>
 
+      {/* PAGINATION */}
+      {totalPages > 1 && (
+        <div className="flex justify-center mt-6 gap-2">
+          <button onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))} className="px-3 py-1 rounded bg-gray-300 hover:bg-gray-400">Prev</button>
+          {Array.from({ length: totalPages }, (_, i) => (
+            <button key={i} onClick={() => setCurrentPage(i + 1)} className={`px-3 py-1 rounded ${currentPage === i + 1 ? "bg-blue-600 text-white" : "bg-gray-300 hover:bg-gray-400"}`}>{i + 1}</button>
+          ))}
+          <button onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))} className="px-3 py-1 rounded bg-gray-300 hover:bg-gray-400">Next</button>
+        </div>
+      )}
+
+      {/* ID MODAL */}
       <IDPreviewModal isOpen={modalOpen} onClose={() => setModalOpen(false)} imageSrc={modalImage} visitorName={modalName} />
+
+      {/* AUDIT TRAIL */}
+      {(userRole === "admin" || userRole === "officer") && (
+        <div className="mt-10 bg-white shadow rounded p-4">
+          <h2 className="text-lg font-bold mb-2">Audit Trail</h2>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <thead>
+                <tr>
+                  <th className="px-3 py-1 border-b">Visitor</th>
+                  <th className="px-3 py-1 border-b">Action</th>
+                  <th className="px-3 py-1 border-b">Performed By</th>
+                  <th className="px-3 py-1 border-b">Date/Time</th>
+                </tr>
+              </thead>
+              <tbody>
+                {auditTrail.map((a) => (
+                  <tr key={a._id}>
+                    <td className="px-3 py-1 border-b">{a.visitorName}</td>
+                    <td className="px-3 py-1 border-b">{a.action}</td>
+                    <td className="px-3 py-1 border-b">{a.performedBy}</td>
+                    <td className="px-3 py-1 border-b">{new Date(a.timestamp).toLocaleString()}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* USER MANAGEMENT */}
+      {userRole === "admin" && (
+        <div className="mt-10 bg-white shadow rounded p-4">
+          <h2 className="text-lg font-bold mb-2">User Management</h2>
+          <button className="bg-green-600 text-white px-3 py-1 rounded mb-2" onClick={() => setUserModalOpen(true)}>Add User</button>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <thead>
+                <tr>
+                  <th className="px-3 py-1 border-b">Name</th>
+                  <th className="px-3 py-1 border-b">Role</th>
+                  <th className="px-3 py-1 border-b">Status</th>
+                  <th className="px-3 py-1 border-b">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {users.map(u => (
+                  <tr key={u._id}>
+                    <td className="px-3 py-1 border-b">{u.name}</td>
+                    <td className="px-3 py-1 border-b">{u.role}</td>
+                    <td className="px-3 py-1 border-b">{u.active ? "Active" : "Inactive"}</td>
+                    <td className="px-3 py-1 border-b">
+                      <button onClick={() => { setEditingUser(u); setUserModalOpen(true); }} className="text-blue-600 font-bold mr-2">Edit</button>
+                      <button onClick={() => toggleUserStatus(u._id)} className="text-red-600 font-bold">{u.active ? "Deactivate" : "Activate"}</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

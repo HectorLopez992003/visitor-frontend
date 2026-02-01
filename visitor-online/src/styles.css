@@ -1,0 +1,111 @@
+/* Global Styles */
+body {
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  background: linear-gradient(135deg, #e0f7fa, #f1f8e9);
+  margin: 0;
+  padding: 0;
+}
+
+/* Container for forms */
+.container {
+  max-width: 450px;
+  margin: 80px auto;
+  padding: 40px 30px;
+  background-color: #ffffff;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+  border-radius: 15px;
+  transition: 0.3s;
+}
+
+.container:hover {
+  transform: translateY(-5px);
+}
+
+/* Titles */
+h2 {
+  text-align: center;
+  margin-bottom: 25px;
+  color: #333;
+  font-size: 28px;
+}
+
+/* Input fields */
+input {
+  width: 100%;
+  padding: 14px;
+  margin-bottom: 20px;
+  border-radius: 10px;
+  border: 1px solid #ccc;
+  font-size: 16px;
+  transition: 0.3s;
+}
+
+input:focus {
+  border-color: #007bff;
+  outline: none;
+}
+
+/* Buttons */
+button {
+  width: 100%;
+  padding: 14px;
+  background-color: #007bff;
+  border: none;
+  color: white;
+  font-weight: bold;
+  font-size: 16px;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: 0.3s;
+}
+
+button:hover {
+  background-color: #0056b3;
+  transform: scale(1.03);
+}
+
+/* Links */
+a {
+  color: #007bff;
+  text-decoration: none;
+  font-weight: bold;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+/* Home page links container */
+.home-links {
+  margin-top: 30px;
+  display: flex;
+  justify-content: center;
+  gap: 30px;
+  font-size: 18px;
+}
+
+/* Form labels */
+label {
+  font-weight: 500;
+  margin-bottom: 5px;
+  display: block;
+}
+
+/* Alert box */
+.alert {
+  padding: 10px;
+  margin-bottom: 20px;
+  border-radius: 8px;
+  text-align: center;
+  font-weight: bold;
+}
+
+.alert-success {
+  background-color: #d4edda;
+  color: #155724;
+}
+
+.alert-error {
+  background-color: #f8d7da;
+  color: #721c24;
+}
