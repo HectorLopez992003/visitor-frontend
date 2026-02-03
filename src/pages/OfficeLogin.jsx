@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 
 const OfficeLogin = ({ onLogin, goBack }) => {
-  const [username, setUsername] = useState("");
+  const [email, setEmail] = useState("");   // renamed
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
 
@@ -10,17 +10,17 @@ const OfficeLogin = ({ onLogin, goBack }) => {
     setError("");
 
     try {
-      const res = await fetch("http://localhost:5000/api/login/office", {
+      const res = await fetch("http://localhost:5000/api/office-auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, password }),
+        body: JSON.stringify({ email, password }) // must match backend
       });
 
-      if (!res.ok) throw new Error("Invalid credentials");
+      const data = await res.json();
 
-      const user = await res.json(); // { username, role: "admin" | "staff" }
+      if (!res.ok) throw new Error(data.message || "Invalid credentials");
 
-      onLogin(user);
+      onLogin(data); // user object from backend
     } catch (err) {
       setError(err.message);
     }
@@ -30,22 +30,28 @@ const OfficeLogin = ({ onLogin, goBack }) => {
     <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-green-50 to-blue-50">
       <div className="bg-white p-10 rounded-2xl shadow-xl w-full max-w-md flex flex-col gap-6">
         <h1 className="text-3xl font-bold text-center">Office Login</h1>
+
         {error && <p className="text-red-600 text-center">{error}</p>}
+
         <form className="flex flex-col gap-4" onSubmit={handleSubmit}>
           <input
-            type="text"
-            placeholder="Username"
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
+            type="email"
+            placeholder="Email Address"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
             className="border p-3 rounded-lg"
+            required
           />
+
           <input
             type="password"
             placeholder="Password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             className="border p-3 rounded-lg"
+            required
           />
+
           <button
             type="submit"
             className="bg-green-500 text-white font-bold py-3 rounded-lg hover:bg-green-600 transition"
@@ -53,6 +59,7 @@ const OfficeLogin = ({ onLogin, goBack }) => {
             Login
           </button>
         </form>
+
         <button
           onClick={goBack}
           className="text-gray-500 text-center mt-2 hover:underline"
