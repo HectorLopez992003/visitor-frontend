@@ -1,6 +1,6 @@
 import React from "react";
 
-const LoginPage = ({ goToGuard, goToOffice, goToAdminLogin }) => {
+const LoginPage = ({ goToGuard, goToOfficeLogin, goToAdminLogin }) => {
   return (
     <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-blue-50 via-purple-50 to-pink-50">
       <div className="bg-white rounded-2xl shadow-2xl p-10 flex flex-col items-center gap-8 w-full max-w-md">
@@ -14,12 +14,15 @@ const LoginPage = ({ goToGuard, goToOffice, goToAdminLogin }) => {
           >
             Guard Portal
           </button>
+
+          {/* Updated to go through OfficeLogin page */}
           <button
-            onClick={goToOffice}
+            onClick={goToOfficeLogin}
             className="w-full bg-gradient-to-r from-green-400 to-green-600 text-white font-bold py-3 rounded-xl shadow-lg hover:scale-105 transform transition"
           >
             Office Portal
           </button>
+
           <button
             onClick={goToAdminLogin}
             className="w-full bg-gradient-to-r from-yellow-400 to-yellow-500 text-black font-bold py-3 rounded-xl shadow-lg hover:scale-105 transform transition"

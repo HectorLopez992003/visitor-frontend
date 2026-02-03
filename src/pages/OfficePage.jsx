@@ -1,12 +1,15 @@
 import React, { useState, useEffect, useRef } from "react";
 import IDPreviewModal from "../components/IDPreviewModal";
+import UserModal from "../components/UserModal"; // ✅ Added UserModal import
 import { Html5Qrcode } from "html5-qrcode";
 import { API_BASE } from "../api";
 
-const OfficePage = ({ goToLogin, newVisitor }) => {
+const OfficePage = ({ goToLogin, newVisitor, currentUser, visitors }) => {
+
   // -------------------- STATES --------------------
   const [localVisitors, setLocalVisitors] = useState([]);
   const [searchTerm, setSearchTerm] = useState("");
+  const [userRole, setUserRole] = useState("Admin"); 
   const [filterStatus, setFilterStatus] = useState("All");
   const [filterOffice, setFilterOffice] = useState("All");
   const [showTodayOnly, setShowTodayOnly] = useState(false);
@@ -36,13 +39,12 @@ const OfficePage = ({ goToLogin, newVisitor }) => {
   const [userModalOpen, setUserModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState(null);
 
-  // -------------------- LOGIN TOKEN --------------------
-  const token = localStorage.getItem("token"); // Assuming you saved token on login
-  const userRole = localStorage.getItem("role"); // "admin", "guard", etc.
-
-  useEffect(() => {
-    if (!token) goToLogin(); // redirect if not logged in
-  }, []);
+  // -------------------- SET VISITORS FROM PROP --------------------
+useEffect(() => {
+  if (visitors && visitors.length) {
+    setLocalVisitors(visitors);
+  }
+}, [visitors]);
 
   // -------------------- TOAST --------------------
   const showToast = (message, type = "success") => {
@@ -117,22 +119,21 @@ const OfficePage = ({ goToLogin, newVisitor }) => {
   // -------------------- FETCH DATA --------------------
   const fetchVisitors = async () => {
     try {
-      const res = await fetch(`${API_BASE}/visitors`, { headers: { Authorization: `Bearer ${token}` } });
+      const res = await fetch(`${API_BASE}/visitors`);
       if (!res.ok) throw new Error("Failed to fetch visitors");
       const data = await res.json();
       setLocalVisitors(data);
     } catch (err) {
       console.error(err);
-      showToast("Failed to load visitors", "error");
+      showToast("Failed to load visitors from backend", "error");
     } finally {
       setLoading(false);
     }
   };
 
   const fetchAuditTrail = async () => {
-    if (userRole !== "admin" && userRole !== "officer") return;
     try {
-      const res = await fetch(`${API_BASE}/audit-trail`, { headers: { Authorization: `Bearer ${token}` } });
+      const res = await fetch(`${API_BASE}/audit-trail`);
       if (!res.ok) throw new Error("Failed to fetch audit trail");
       const data = await res.json();
       setAuditTrail(data);
@@ -142,9 +143,8 @@ const OfficePage = ({ goToLogin, newVisitor }) => {
   };
 
   const fetchUsers = async () => {
-    if (userRole !== "admin") return;
     try {
-      const res = await fetch(`${API_BASE}/users`, { headers: { Authorization: `Bearer ${token}` } });
+      const res = await fetch(`${API_BASE}/users`);
       if (!res.ok) throw new Error("Failed to fetch users");
       const data = await res.json();
       setUsers(data);
@@ -153,11 +153,7 @@ const OfficePage = ({ goToLogin, newVisitor }) => {
     }
   };
 
-  useEffect(() => {
-    fetchVisitors();
-    fetchAuditTrail();
-    fetchUsers();
-  }, []);
+  useEffect(() => { fetchVisitors(); fetchAuditTrail(); fetchUsers(); }, []);
 
   useEffect(() => {
     if (newVisitor) setLocalVisitors(prev => [newVisitor, ...prev]);
@@ -174,10 +170,7 @@ const OfficePage = ({ goToLogin, newVisitor }) => {
   // -------------------- PROCESSING --------------------
   const startProcessing = async (id) => {
     try {
-      const res = await fetch(`${API_BASE}/visitors/${id}/start-processing`, {
-        method: "PUT",
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const res = await fetch(`${API_BASE}/visitors/${id}/start-processing`, { method: "PUT" });
       if (!res.ok) throw new Error("Failed to start processing");
       const updatedVisitor = await res.json();
       setLocalVisitors(prev => prev.map(v => v._id === updatedVisitor._id ? updatedVisitor : v));
@@ -190,10 +183,7 @@ const OfficePage = ({ goToLogin, newVisitor }) => {
 
   const markProcessed = async (id) => {
     try {
-      const res = await fetch(`${API_BASE}/visitors/${id}/office-processed`, {
-        method: "PUT",
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const res = await fetch(`${API_BASE}/visitors/${id}/office-processed`, { method: "PUT" });
       if (!res.ok) throw new Error("Failed to mark as processed");
       const updatedVisitor = await res.json();
       setLocalVisitors(prev => prev.map(v => v._id === updatedVisitor._id ? updatedVisitor : v));
@@ -209,7 +199,7 @@ const OfficePage = ({ goToLogin, newVisitor }) => {
     try {
       const res = await fetch(`${API_BASE}/visitors/${id}/accept-decline`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ accepted: accept }),
       });
       if (!res.ok) throw new Error("Failed to update visitor status");
@@ -217,10 +207,9 @@ const OfficePage = ({ goToLogin, newVisitor }) => {
       setLocalVisitors(prev => prev.map(v => v._id === updatedVisitor._id ? updatedVisitor : v));
       showToast(`Visitor ${updatedVisitor.name} ${accept ? "Accepted ✅" : "Declined ❌"}`);
 
-      // Send email notification
       await fetch(`${API_BASE}/visitors/${id}/notify`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ accepted: accept, email: updatedVisitor.email, name: updatedVisitor.name })
       });
     } catch (err) {
@@ -234,18 +223,63 @@ const OfficePage = ({ goToLogin, newVisitor }) => {
     try {
       const user = users.find(u => u._id === userId);
       if (!user) return;
+
       const res = await fetch(`${API_BASE}/users/${userId}/toggle-status`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ active: !user.active }),
       });
       if (!res.ok) throw new Error("Failed to toggle user status");
+
       const updatedUser = await res.json();
       setUsers(prev => prev.map(u => u._id === updatedUser._id ? updatedUser : u));
       showToast(`User ${updatedUser.name} is now ${updatedUser.active ? "Active ✅" : "Inactive ❌"}`);
     } catch (err) {
       console.error(err);
       showToast("Failed to update user status", "error");
+    }
+  };
+  // ✅ Add delete user function
+const deleteUser = async (userId) => {
+  const userConfirmed = window.confirm("Are you sure you want to delete this user?");
+if (!userConfirmed) return;
+  try {
+    const res = await fetch(`${API_BASE}/users/${userId}`, { method: "DELETE" });
+    if (!res.ok) throw new Error("Failed to delete user");
+    setUsers(prev => prev.filter(u => u._id !== userId));
+    showToast("User deleted successfully", "success");
+  } catch (err) {
+    console.error(err);
+    showToast("Failed to delete user", "error");
+  }
+};
+
+  const saveUser = async (userData) => {
+    try {
+      const method = editingUser ? "PUT" : "POST";
+      const url = editingUser ? `${API_BASE}/users/${editingUser._id}` : `${API_BASE}/users`;
+
+      const res = await fetch(url, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(userData),
+      });
+
+      if (!res.ok) throw new Error("Failed to save user");
+
+      const savedUser = await res.json();
+
+      setUsers(prev => editingUser
+        ? prev.map(u => u._id === savedUser._id ? savedUser : u)
+        : [savedUser, ...prev]
+      );
+
+      showToast(`User ${savedUser.name} saved successfully`);
+      setUserModalOpen(false);
+      setEditingUser(null);
+    } catch (err) {
+      console.error(err);
+      showToast("Failed to save user", "error");
     }
   };
 
@@ -299,6 +333,7 @@ const OfficePage = ({ goToLogin, newVisitor }) => {
         (decodedText) => {
           let visitorData;
           try { visitorData = JSON.parse(decodedText); } catch { visitorData = { contactNumber: decodedText }; }
+
           const visitor = localVisitors.find((v) => v.contactNumber === visitorData.contactNumber && v.accepted);
           if (!visitor) { showToast("QR does not match any accepted visitor!", "error"); return; }
 
@@ -322,9 +357,28 @@ const OfficePage = ({ goToLogin, newVisitor }) => {
 
   // -------------------- MAIN RETURN --------------------
   return (
-    <div className="max-w-7xl mx-auto p-6 bg-gray-50 min-h-screen relative">
-      {/* TOAST */}
-      {toast && (
+  <div className="max-w-7xl mx-auto p-6 bg-gray-50 min-h-screen relative">
+
+    {/* ---------------- LOGGED IN USER INFO ---------------- */}
+    <div className="flex justify-between items-center mb-4 bg-white shadow p-3 rounded">
+      <div className="font-semibold text-gray-700">
+        Logged in as:{" "}
+        <span className="font-bold text-black">{currentUser?.name}</span>
+        <span className="ml-3 px-2 py-1 text-xs rounded bg-blue-600 text-white">
+          {currentUser?.role}
+        </span>
+      </div>
+
+      <button
+        onClick={goToLogin}
+        className="bg-red-500 text-white px-3 py-1 rounded hover:bg-red-600"
+      >
+        Logout
+      </button>
+    </div>
+
+    {/* TOAST */}
+    {toast && (
         <div className={`fixed top-6 right-6 px-4 py-2 rounded shadow text-white font-semibold ${toast.type === "success" ? "bg-green-600" : toast.type === "error" ? "bg-red-600" : "bg-blue-600"} z-50`}>
           {toast.message}
         </div>
@@ -342,10 +396,10 @@ const OfficePage = ({ goToLogin, newVisitor }) => {
         </>}
       </div>
 
-      {/* FILTERS & LOGOUT */}
+      {/* ---------------- FILTERS & LOGOUT ---------------- */}
       <div className="flex flex-col md:flex-row justify-between items-center mb-6 gap-2">
         <button onClick={goToLogin} className="bg-gray-200 text-black px-4 py-2 rounded hover:bg-gray-300 font-semibold">Logout</button>
-        <input type="text" placeholder="Search..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="border p-2 rounded w-full md:w-64 font-semibold" />
+        <input type="text" placeholder="Search by Name, Contact Number, Office, or Purpose" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="border p-2 rounded w-full md:w-64 font-semibold" />
         <input type="date" value={filterDate} onChange={(e) => setFilterDate(e.target.value)} className="border p-2 rounded w-full md:w-48 font-semibold" />
         <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)} className="border p-2 rounded w-full md:w-48 font-semibold">
           <option value="All">All Status</option>
@@ -367,23 +421,58 @@ const OfficePage = ({ goToLogin, newVisitor }) => {
         </label>
       </div>
 
-      {/* VISITOR CARDS */}
+      {/* ---------------- VISITOR CARDS ---------------- */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
         {paginatedVisitors.map((v) => (
           <div key={v._id} className={`rounded-lg shadow-lg p-4 flex flex-col gap-2 border ${getCardBackground(v)} transition transform hover:-translate-y-1 hover:shadow-2xl`}>
-            {/* ACCEPT / DECLINE */}
+            {/* ACCEPT / DECLINE BUTTONS */}
             {v.accepted === null && !v.processingStartedTime && !v.processed && !isOverdue(v) && (
               <div className="flex justify-end gap-2 mb-2">
                 <button onClick={() => handleAcceptDecline(v._id, true)} className="bg-green-600 text-white px-3 py-1 rounded font-bold">✔</button>
                 <button onClick={() => handleAcceptDecline(v._id, false)} className="bg-red-600 text-white px-3 py-1 rounded font-bold">✖</button>
               </div>
             )}
+
+            {/* ACCEPTED / DECLINED TAG */}
+            {v.accepted === true && <span className="px-2 py-1 rounded-full text-xs font-bold mb-1 inline-block text-center" style={{ minWidth: "350px", backgroundColor: "#C6F6D5", color: "#22543D" }}>Accepted ✅</span>}
+            {v.accepted === false && <span className="px-2 py-1 rounded-full text-xs font-bold mb-1 inline-block text-center" style={{ minWidth: "350px", backgroundColor: "#FEB2B2", color: "#742A2A" }}>Declined ❌</span>}
+
             <h2 className="text-xl font-bold text-black">{highlightMatch(v.name)}</h2>
             <p className="text-gray-800 font-semibold">{highlightMatch(v.contactNumber)}</p>
             <p className="text-gray-800 font-semibold"><span className="font-bold">Office:</span> {highlightMatch(v.office)}</p>
+            <p className="text-gray-800 font-semibold"><span className="font-bold">Email:</span> {highlightMatch(v.email) || "-"}</p>
             <p className="text-gray-800 font-semibold"><span className="font-bold">Purpose:</span> {highlightMatch(v.purpose)}</p>
             <p className="text-gray-800 font-semibold"><span className="font-bold">Scheduled Date:</span> {v.scheduledDate ? formatDateMMDDYYYY(v.scheduledDate) : "-"}</p>
+            <p className="text-gray-800 font-semibold"><span className="font-bold">Scheduled Time:</span> {v.scheduledTime ? formatTime(v.scheduledTime) : "-"}</p>
+            <p className="text-gray-800 font-semibold"><span className="font-bold">Date In:</span> {v.timeIn ? formatDateMMDDYYYY(v.timeIn) : "-"}</p>
+            <p className="text-gray-800 font-semibold"><span className="font-bold">Processing Started:</span> {formatTime(v.processingStartedTime)}</p>
+            <p className="text-gray-800 font-semibold"><span className="font-bold">Office Processed:</span> {formatTime(v.officeProcessedTime)}</p>
             <div className="my-3">{getStatusBadge(v)}</div>
+
+            {v.overdueEmailSent && (
+              <span className="inline-flex w-fit self-start px-3 py-1 rounded-md bg-blue-600 text-white font-semibold text-sm">Email sent</span>
+            )}
+
+            {v.idFile && (
+              <div className="relative w-full h-32 overflow-hidden rounded border cursor-pointer group" onClick={() => { setModalImage(v.idFile); setModalName(v.name); setModalOpen(true); }}>
+                <img src={v.idFile} alt="ID" className="w-full h-full object-contain transition group-hover:scale-105"/>
+              </div>
+            )}
+
+            {/* Bottom status / action */}
+            {v.accepted === null && !v.processingStartedTime && !v.processed && !isOverdue(v) ? (
+              <p className="text-center font-bold mt-3 text-gray-700">Pending</p>
+            ) : v.accepted === true && !v.processingStartedTime ? (
+              <button onClick={() => startProcessing(v._id)} className="bg-blue-600 text-white px-3 py-1 rounded w-full font-bold mt-3">Start Processing</button>
+            ) : v.accepted === true && !v.processed ? (
+              <button onClick={() => markProcessed(v._id)} className="bg-green-600 text-white px-3 py-1 rounded w-full font-bold mt-3">Done Processing</button>
+            ) : v.accepted === true && v.processed ? (
+              <p className="text-center font-bold mt-3 text-green-700">Processed</p>
+            ) : v.accepted === false ? (
+              <p className="text-center font-bold mt-3 text-red-700">Declined</p>
+            ) : isOverdue(v) ? (
+              <p className="text-center font-bold mt-3 text-red-700">Overdue</p>
+            ) : null}
           </div>
         ))}
       </div>
@@ -399,70 +488,84 @@ const OfficePage = ({ goToLogin, newVisitor }) => {
         </div>
       )}
 
-      {/* ID MODAL */}
+      {/* ---------------- ID MODAL ---------------- */}
       <IDPreviewModal isOpen={modalOpen} onClose={() => setModalOpen(false)} imageSrc={modalImage} visitorName={modalName} />
 
-      {/* AUDIT TRAIL */}
-      {(userRole === "admin" || userRole === "officer") && (
-        <div className="mt-10 bg-white shadow rounded p-4">
-          <h2 className="text-lg font-bold mb-2">Audit Trail</h2>
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead>
-                <tr>
-                  <th className="px-3 py-1 border-b">Visitor</th>
-                  <th className="px-3 py-1 border-b">Action</th>
-                  <th className="px-3 py-1 border-b">Performed By</th>
-                  <th className="px-3 py-1 border-b">Date/Time</th>
+      {/* ---------------- AUDIT TRAIL ---------------- */}
+      <div className="mt-10 bg-white shadow rounded p-4">
+        <h2 className="text-lg font-bold mb-2">Audit Trail</h2>
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-sm">
+            <thead>
+              <tr>
+                <th className="px-3 py-1 border-b">Visitor</th>
+                <th className="px-3 py-1 border-b">Action</th>
+                <th className="px-3 py-1 border-b">Performed By</th>
+                <th className="px-3 py-1 border-b">Date/Time</th>
+              </tr>
+            </thead>
+            <tbody>
+              {auditTrail.map((a) => (
+                <tr key={a._id}>
+                  <td className="px-3 py-1 border-b">{a.visitorName}</td>
+                  <td className="px-3 py-1 border-b">{a.action}</td>
+                  <td className="px-3 py-1 border-b">{a.performedBy}</td>
+                  <td className="px-3 py-1 border-b">{new Date(a.timestamp).toLocaleString()}</td>
                 </tr>
-              </thead>
-              <tbody>
-                {auditTrail.map((a) => (
-                  <tr key={a._id}>
-                    <td className="px-3 py-1 border-b">{a.visitorName}</td>
-                    <td className="px-3 py-1 border-b">{a.action}</td>
-                    <td className="px-3 py-1 border-b">{a.performedBy}</td>
-                    <td className="px-3 py-1 border-b">{new Date(a.timestamp).toLocaleString()}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+              ))}
+            </tbody>
+          </table>
         </div>
-      )}
+      </div>
 
-      {/* USER MANAGEMENT */}
-      {userRole === "admin" && (
-        <div className="mt-10 bg-white shadow rounded p-4">
-          <h2 className="text-lg font-bold mb-2">User Management</h2>
-          <button className="bg-green-600 text-white px-3 py-1 rounded mb-2" onClick={() => setUserModalOpen(true)}>Add User</button>
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead>
-                <tr>
-                  <th className="px-3 py-1 border-b">Name</th>
-                  <th className="px-3 py-1 border-b">Role</th>
-                  <th className="px-3 py-1 border-b">Status</th>
-                  <th className="px-3 py-1 border-b">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {users.map(u => (
-                  <tr key={u._id}>
-                    <td className="px-3 py-1 border-b">{u.name}</td>
-                    <td className="px-3 py-1 border-b">{u.role}</td>
-                    <td className="px-3 py-1 border-b">{u.active ? "Active" : "Inactive"}</td>
-                    <td className="px-3 py-1 border-b">
-                      <button onClick={() => { setEditingUser(u); setUserModalOpen(true); }} className="text-blue-600 font-bold mr-2">Edit</button>
-                      <button onClick={() => toggleUserStatus(u._id)} className="text-red-600 font-bold">{u.active ? "Deactivate" : "Activate"}</button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
+      {/* ---------------- USER MANAGEMENT ---------------- */}
+{userRole === "Admin" && ( // ✅ Only show this section to Admins
+  <div className="mt-10 bg-white shadow rounded p-4">
+    <h2 className="text-lg font-bold mb-2">User Management</h2>
+
+    {/* ✅ User counts */}
+    <p className="mb-2 font-semibold">
+      Total Users: {users.length} | Active: {users.filter(u => u.active).length} | Inactive: {users.filter(u => !u.active).length}
+    </p>
+
+    <button className="bg-green-600 text-white px-3 py-1 rounded mb-2" onClick={() => setUserModalOpen(true)}>Add User</button>
+    
+    <div className="overflow-x-auto">
+      <table className="w-full text-left text-sm">
+        <thead>
+          <tr>
+            <th className="px-3 py-1 border-b">Name</th>
+            <th className="px-3 py-1 border-b">Role</th>
+            <th className="px-3 py-1 border-b">Status</th>
+            <th className="px-3 py-1 border-b">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {users.map(u => (
+            <tr key={u._id}>
+              <td className="px-3 py-1 border-b">{u.name}</td>
+              <td className="px-3 py-1 border-b">{u.role}</td>
+              <td className="px-3 py-1 border-b">{u.active ? "Active" : "Inactive"}</td>
+              <td className="px-3 py-1 border-b">
+                <button onClick={() => { setEditingUser(u); setUserModalOpen(true); }} className="text-blue-600 font-bold mr-2">Edit</button>
+                <button onClick={() => toggleUserStatus(u._id)} className="text-red-600 font-bold mr-2">{u.active ? "Deactivate" : "Activate"}</button>
+                <button onClick={() => deleteUser(u._id)} className="text-gray-700 font-bold">Delete</button> {/* ✅ Delete button */}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  </div>
+)}
+      {/* ---------------- USER MODAL ---------------- */}
+      <UserModal
+        isOpen={userModalOpen}
+        onClose={() => { setUserModalOpen(false); setEditingUser(null); }}
+        onSave={saveUser}
+        editingUser={editingUser}
+      />
+
     </div>
   );
 };
