@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 
 const OfficeLogin = ({ onLogin, goBack }) => {
-  const [email, setEmail] = useState("");   // renamed
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
 
@@ -13,14 +13,16 @@ const OfficeLogin = ({ onLogin, goBack }) => {
       const res = await fetch("http://localhost:5000/api/office-auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }) // must match backend
+        body: JSON.stringify({ email, password }),
       });
 
       const data = await res.json();
 
       if (!res.ok) throw new Error(data.message || "Invalid credentials");
 
-      onLogin(data); // user object from backend
+localStorage.setItem("officeToken", data.token);
+localStorage.setItem("officeUser", JSON.stringify(data.user)); // ⭐ THIS IS THE FIX
+onLogin(data.user);
     } catch (err) {
       setError(err.message);
     }

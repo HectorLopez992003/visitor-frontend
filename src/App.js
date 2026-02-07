@@ -11,16 +11,26 @@ import OfficeLogin from "./pages/OfficeLogin";
 function App() {
   const [currentPage, setCurrentPage] = useState("login");
   const [visitors, setVisitors] = useState([]);
+  const [newVisitor, setNewVisitor] = useState(null); // ✅ added
   const [isPublicVisitor, setIsPublicVisitor] = useState(false);
   const [currentUser, setCurrentUser] = useState(null);
 
-  // Public visitor check
+  // ---------------- PUBLIC VISITOR CHECK ----------------
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get("page") === "visitor") setIsPublicVisitor(true);
   }, []);
 
-  // Fetch visitors
+  // ---------------- LOAD CURRENT USER FROM LOCALSTORAGE ----------------
+  useEffect(() => {
+    const savedUser = localStorage.getItem("officeUser");
+    if (savedUser) {
+      setCurrentUser(JSON.parse(savedUser));
+      setCurrentPage("office"); // Auto-redirect if user exists
+    }
+  }, []);
+
+  // ---------------- FETCH VISITORS ----------------
   const fetchVisitors = async () => {
     try {
       const res = await fetch("http://localhost:5000/api/visitors");
@@ -40,7 +50,7 @@ function App() {
     fetchVisitors();
   }, []);
 
-  // Visitor functions
+  // ---------------- VISITOR FUNCTIONS ----------------
   const getCurrentDateTime = () => new Date().toISOString();
 
   const addVisitor = async (visitor, callback) => {
@@ -53,6 +63,7 @@ function App() {
       if (!res.ok) throw new Error(await res.text());
       const saved = await res.json();
       setVisitors((prev) => [saved, ...prev]);
+      setNewVisitor(saved); // ✅ push to OfficePage
       if (callback) callback();
     } catch (err) {
       console.error("Failed to save visitor:", err);
@@ -120,8 +131,10 @@ function App() {
     setVisitors((prev) => prev.filter((v) => v._id !== id));
   };
 
-  // Navigation
+  // ---------------- NAVIGATION ----------------
   const goToLogin = () => {
+    localStorage.removeItem("officeUser");
+    localStorage.removeItem("officeToken"); // ✅ remove token
     setCurrentUser(null);
     setCurrentPage("login");
   };
@@ -141,15 +154,19 @@ function App() {
   };
   const goToOfficeLogin = () => setCurrentPage("office-login");
 
+  // ---------------- OFFICE LOGIN ----------------
   const handleOfficeLogin = (user) => {
     if (!user) return alert("Login failed!");
     console.log("Office user logged in:", user);
     setCurrentUser(user);
-    setCurrentPage("office"); // ✅ must match key in pageComponents
+    localStorage.setItem("officeUser", JSON.stringify(user));
+    if (user.token) localStorage.setItem("officeToken", user.token); // ✅ save token
+    setCurrentPage("office");
   };
 
   if (isPublicVisitor) return <VisitorPublicPage addVisitor={addVisitor} />;
 
+  // ---------------- PAGE COMPONENTS ----------------
   const pageComponents = {
     login: <LoginPage goToGuard={goToGuard} goToOfficeLogin={goToOfficeLogin} goToAdminLogin={goToAdminLogin} />,
     "office-login": <OfficeLogin onLogin={handleOfficeLogin} goBack={goToLogin} />,
@@ -170,17 +187,16 @@ function App() {
         <VisitorRegistration addVisitor={addVisitor} />
       </>
     ),
-office: currentUser ? (
-  <OfficePage
-    visitors={visitors}
-    startProcessing={startProcessing}
-    markProcessed={markProcessed}
-    goToLogin={goToLogin}
-    currentUser={currentUser}
-  />
-) : (
-  <LoginPage goToGuard={goToGuard} goToOfficeLogin={goToOfficeLogin} goToAdminLogin={goToAdminLogin} />
-),
+    office: currentUser ? (
+      <OfficePage
+        visitors={visitors}
+        newVisitor={newVisitor} // ✅ pass newVisitor for live updates
+        goToLogin={goToLogin}
+        currentUser={currentUser}
+      />
+    ) : (
+      <LoginPage goToGuard={goToGuard} goToOfficeLogin={goToOfficeLogin} goToAdminLogin={goToAdminLogin} />
+    ),
     "admin-login": <AdminLogin goToAdmin={goToAdmin} />,
     admin: (
       <AdminPage

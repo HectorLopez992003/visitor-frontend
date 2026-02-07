@@ -46,6 +46,10 @@ useEffect(() => {
   }
 }, [visitors]);
 
+useEffect(() => {
+  setLoading(false);
+}, [localVisitors]);
+
   // -------------------- TOAST --------------------
   const showToast = (message, type = "success") => {
     setToast({ message, type });
@@ -116,21 +120,6 @@ useEffect(() => {
 
   const isToday = (datetime) => datetime ? new Date(datetime).toDateString() === new Date().toDateString() : false;
 
-  // -------------------- FETCH DATA --------------------
-  const fetchVisitors = async () => {
-    try {
-      const res = await fetch(`${API_BASE}/visitors`);
-      if (!res.ok) throw new Error("Failed to fetch visitors");
-      const data = await res.json();
-      setLocalVisitors(data);
-    } catch (err) {
-      console.error(err);
-      showToast("Failed to load visitors from backend", "error");
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const fetchAuditTrail = async () => {
     try {
       const res = await fetch(`${API_BASE}/audit-trail`);
@@ -142,30 +131,63 @@ useEffect(() => {
     }
   };
 
-  const fetchUsers = async () => {
-    try {
-      const res = await fetch(`${API_BASE}/users`);
-      if (!res.ok) throw new Error("Failed to fetch users");
-      const data = await res.json();
-      setUsers(data);
-    } catch (err) {
-      console.error(err);
+const fetchUsers = async () => {
+  try {
+    const token = localStorage.getItem("officeToken");
+    console.log("FetchUsers token:", token);
+
+    if (!token) {
+      showToast("No token found. Please login.", "error");
+      return;
     }
-  };
 
-  useEffect(() => { fetchVisitors(); fetchAuditTrail(); fetchUsers(); }, []);
+    const res = await fetch(`${API_BASE}/users`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
 
-  useEffect(() => {
-    if (newVisitor) setLocalVisitors(prev => [newVisitor, ...prev]);
-  }, [newVisitor]);
+    const data = await res.json();
+    console.log("Fetched users:", data);
 
-  useEffect(() => {
-    const interval = setInterval(() => {
-      fetchVisitors();
-      fetchAuditTrail();
-    }, 10000);
-    return () => clearInterval(interval);
-  }, []);
+    if (!res.ok) throw new Error(data.message || "Failed to fetch users");
+    setUsers(data);
+  } catch (err) {
+    console.error("Error fetching users:", err);
+    showToast("Failed to load users from backend", "error");
+  }
+};
+
+// Add new visitor live
+useEffect(() => {
+  if (newVisitor) setLocalVisitors(prev => [newVisitor, ...prev]);
+}, [newVisitor]);
+
+const fetchVisitors = async () => {
+  try {
+    const res = await fetch(`${API_BASE}/visitors`);
+    if (!res.ok) throw new Error("Failed to fetch visitors");
+    const data = await res.json();
+    setLocalVisitors(data);
+  } catch (err) {
+    console.error(err);
+    showToast("Failed to fetch visitors", "error");
+  }
+};
+
+// Auto refresh visitors & audit
+useEffect(() => {
+  const interval = setInterval(() => {
+    fetchVisitors();
+    fetchAuditTrail();
+  }, 10000);
+  return () => clearInterval(interval);
+}, []);
+
+// Fetch users when admin logs in
+useEffect(() => {
+  if (["Admin", "Super Admin"].includes(currentUser?.role)) {
+    fetchUsers();
+  }
+}, [currentUser]);
 
   // -------------------- PROCESSING --------------------
   const startProcessing = async (id) => {
@@ -218,70 +240,99 @@ useEffect(() => {
     }
   };
 
-  // -------------------- USER MANAGEMENT FUNCTIONS --------------------
-  const toggleUserStatus = async (userId) => {
-    try {
-      const user = users.find(u => u._id === userId);
-      if (!user) return;
+const toggleUserStatus = async (userId) => {
+  try {
+    const token = localStorage.getItem("officeToken"); // ✅ get the token properly
+    if (!token) return showToast("No token found. Please login.", "error");
 
-      const res = await fetch(`${API_BASE}/users/${userId}/toggle-status`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ active: !user.active }),
-      });
-      if (!res.ok) throw new Error("Failed to toggle user status");
+    const user = users.find(u => u._id === userId);
+    if (!user) return;
 
-      const updatedUser = await res.json();
-      setUsers(prev => prev.map(u => u._id === updatedUser._id ? updatedUser : u));
-      showToast(`User ${updatedUser.name} is now ${updatedUser.active ? "Active ✅" : "Inactive ❌"}`);
-    } catch (err) {
-      console.error(err);
-      showToast("Failed to update user status", "error");
-    }
-  };
+    const res = await fetch(`${API_BASE}/users/${userId}/toggle-status`, {
+      method: "PUT",
+      headers: { 
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}` // ✅ correct token
+      },
+      body: JSON.stringify({ active: !user.active }),
+    });
+
+    if (!res.ok) throw new Error("Failed to toggle user status");
+
+    const updatedUser = await res.json();
+    setUsers(prev => prev.map(u => u._id === updatedUser._id ? updatedUser : u));
+    showToast(`User ${updatedUser.name} is now ${updatedUser.active ? "Active ✅" : "Inactive ❌"}`);
+  } catch (err) {
+    console.error(err);
+    showToast("Failed to update user status", "error");
+  }
+};
+
   // ✅ Add delete user function
 const deleteUser = async (userId) => {
   const userConfirmed = window.confirm("Are you sure you want to delete this user?");
-if (!userConfirmed) return;
+  if (!userConfirmed) return;
+
   try {
-    const res = await fetch(`${API_BASE}/users/${userId}`, { method: "DELETE" });
-    if (!res.ok) throw new Error("Failed to delete user");
+    const token = localStorage.getItem("officeToken");
+    console.log("Token in deleteUser:", token); // ✅ Debug token
+    if (!token) return showToast("No token found. Please login.", "error");
+
+    const res = await fetch(`${API_BASE}/users/${userId}`, {
+      method: "DELETE",
+      headers: { 
+        "Content-Type": "application/json", // ✅ Ensure Content-Type is set
+        Authorization: `Bearer ${token}`
+      }
+    });
+
+    if (!res.ok) {
+      const errData = await res.json();
+      console.error("Delete error response:", errData);
+      throw new Error(errData.message || "Failed to delete user");
+    }
+
     setUsers(prev => prev.filter(u => u._id !== userId));
     showToast("User deleted successfully", "success");
   } catch (err) {
     console.error(err);
-    showToast("Failed to delete user", "error");
+    showToast(err.message || "Failed to delete user", "error");
   }
 };
 
-  const saveUser = async (userData) => {
-    try {
-      const method = editingUser ? "PUT" : "POST";
-      const url = editingUser ? `${API_BASE}/users/${editingUser._id}` : `${API_BASE}/users`;
-
-      const res = await fetch(url, {
-        method,
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(userData),
-      });
-
-      if (!res.ok) throw new Error("Failed to save user");
-
-      const savedUser = await res.json();
-
-      setUsers(prev => editingUser
-        ? prev.map(u => u._id === savedUser._id ? savedUser : u)
-        : [savedUser, ...prev]
-      );
-
-      showToast(`User ${savedUser.name} saved successfully`);
-      setUserModalOpen(false);
-      setEditingUser(null);
-    } catch (err) {
-      console.error(err);
-      showToast("Failed to save user", "error");
+const saveUser = async (userData) => {
+  try {
+    const token = localStorage.getItem("officeToken");
+    if (!token) {
+      showToast("No token found. Please login.", "error");
+      return;
     }
-  };
+
+    const method = editingUser ? "PUT" : "POST";
+    const url = editingUser ? `${API_BASE}/users/${editingUser._id}` : `${API_BASE}/users`;
+
+    const res = await fetch(url, {
+      method,
+      headers: { 
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}` // ✅ include token
+      },
+      body: JSON.stringify(userData),
+    });
+
+    if (!res.ok) throw new Error("Failed to save user");
+
+    const savedUser = await res.json();
+    setUsers(prev => editingUser ? prev.map(u => u._id === savedUser._id ? savedUser : u) : [savedUser, ...prev]);
+
+    showToast(`User ${savedUser.name} saved successfully`);
+    setUserModalOpen(false);
+    setEditingUser(null);
+  } catch (err) {
+    console.error(err);
+    showToast("Failed to save user", "error");
+  }
+};
 
   // -------------------- FILTERED VISITORS --------------------
   const filteredVisitors = localVisitors.filter((v) => {
@@ -518,8 +569,8 @@ if (!userConfirmed) return;
         </div>
       </div>
 
-      {/* ---------------- USER MANAGEMENT ---------------- */}
-{userRole === "Admin" && ( // ✅ Only show this section to Admins
+{/* ---------------- USER MANAGEMENT ---------------- */}
+{["Admin", "Super Admin"].includes(currentUser?.role) && (
   <div className="mt-10 bg-white shadow rounded p-4">
     <h2 className="text-lg font-bold mb-2">User Management</h2>
 
@@ -531,30 +582,34 @@ if (!userConfirmed) return;
     <button className="bg-green-600 text-white px-3 py-1 rounded mb-2" onClick={() => setUserModalOpen(true)}>Add User</button>
     
     <div className="overflow-x-auto">
-      <table className="w-full text-left text-sm">
-        <thead>
-          <tr>
-            <th className="px-3 py-1 border-b">Name</th>
-            <th className="px-3 py-1 border-b">Role</th>
-            <th className="px-3 py-1 border-b">Status</th>
-            <th className="px-3 py-1 border-b">Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          {users.map(u => (
-            <tr key={u._id}>
-              <td className="px-3 py-1 border-b">{u.name}</td>
-              <td className="px-3 py-1 border-b">{u.role}</td>
-              <td className="px-3 py-1 border-b">{u.active ? "Active" : "Inactive"}</td>
-              <td className="px-3 py-1 border-b">
-                <button onClick={() => { setEditingUser(u); setUserModalOpen(true); }} className="text-blue-600 font-bold mr-2">Edit</button>
-                <button onClick={() => toggleUserStatus(u._id)} className="text-red-600 font-bold mr-2">{u.active ? "Deactivate" : "Activate"}</button>
-                <button onClick={() => deleteUser(u._id)} className="text-gray-700 font-bold">Delete</button> {/* ✅ Delete button */}
-              </td>
+      {users.length === 0 ? (
+        <p className="text-gray-500 font-semibold">No users found or still loading...</p>
+      ) : (
+        <table className="w-full text-left text-sm">
+          <thead>
+            <tr>
+              <th className="px-3 py-1 border-b">Name</th>
+              <th className="px-3 py-1 border-b">Role</th>
+              <th className="px-3 py-1 border-b">Status</th>
+              <th className="px-3 py-1 border-b">Actions</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {users.map(u => (
+              <tr key={u._id}>
+                <td className="px-3 py-1 border-b">{u.name}</td>
+                <td className="px-3 py-1 border-b">{u.role}</td>
+                <td className="px-3 py-1 border-b">{u.active ? "Active" : "Inactive"}</td>
+                <td className="px-3 py-1 border-b">
+                  <button onClick={() => { setEditingUser(u); setUserModalOpen(true); }} className="text-blue-600 font-bold mr-2">Edit</button>
+                  <button onClick={() => toggleUserStatus(u._id)} className="text-red-600 font-bold mr-2">{u.active ? "Deactivate" : "Activate"}</button>
+                  <button onClick={() => deleteUser(u._id)} className="text-gray-700 font-bold">Delete</button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
     </div>
   </div>
 )}
