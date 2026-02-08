@@ -122,12 +122,20 @@ useEffect(() => {
 
 const fetchAuditTrail = async () => {
   try {
-    const res = await fetch(`${API_BASE}/audit-trail`);
+    let url = `${API_BASE}/audit-trail`;
+
+    // Only pass office filter for Office Staff
+    if (currentUser?.role === "Office Staff") {
+      url += `?office=${encodeURIComponent(currentUser.office)}`;
+    }
+
+    const res = await fetch(url);
     if (!res.ok) {
       console.warn("Audit trail not found, skipping:", res.status);
       setAuditTrail([]);
       return;
     }
+
     const data = await res.json();
     setAuditTrail(data);
   } catch (err) {
@@ -624,3 +632,4 @@ const saveUser = async (userData) => {
 };
 
 export default OfficePage;
+
