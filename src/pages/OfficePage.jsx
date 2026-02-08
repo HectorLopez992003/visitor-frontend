@@ -120,39 +120,37 @@ useEffect(() => {
 
   const isToday = (datetime) => datetime ? new Date(datetime).toDateString() === new Date().toDateString() : false;
 
-  const fetchAuditTrail = async () => {
-    try {
-      const res = await fetch(`${API_BASE}/audit-trail`);
-      if (!res.ok) throw new Error("Failed to fetch audit trail");
-      const data = await res.json();
-      setAuditTrail(data);
-    } catch (err) {
-      console.error(err);
+const fetchAuditTrail = async () => {
+  try {
+    const res = await fetch(`${API_BASE}/audit-trail`);
+    if (!res.ok) {
+      console.warn("Audit trail not found, skipping:", res.status);
+      setAuditTrail([]);
+      return;
     }
-  };
+    const data = await res.json();
+    setAuditTrail(data);
+  } catch (err) {
+    console.error("Failed to fetch audit trail:", err);
+    setAuditTrail([]);
+  }
+};
 
 const fetchUsers = async () => {
   try {
     const token = localStorage.getItem("officeToken");
-    console.log("FetchUsers token:", token);
-
-    if (!token) {
-      showToast("No token found. Please login.", "error");
-      return;
-    }
+    if (!token) return showToast("No token found. Please login.", "error");
 
     const res = await fetch(`${API_BASE}/users`, {
-      headers: { Authorization: `Bearer ${token}` },
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
     });
-
     const data = await res.json();
-    console.log("Fetched users:", data);
 
     if (!res.ok) throw new Error(data.message || "Failed to fetch users");
     setUsers(data);
   } catch (err) {
     console.error("Error fetching users:", err);
-    showToast("Failed to load users from backend", "error");
+    showToast(err.message || "Failed to load users from backend", "error");
   }
 };
 

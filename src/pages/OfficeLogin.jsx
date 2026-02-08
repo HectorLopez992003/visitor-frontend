@@ -1,30 +1,36 @@
 import React, { useState } from "react";
+import { API_BASE } from "../api";
 
 const OfficeLogin = ({ onLogin, goBack }) => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
+    setLoading(true);
 
     try {
-      const res = await fetch("http://localhost:5000/api/office-auth/login", {
+      const res = await fetch(`${API_BASE}/office-auth/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password }),
       });
 
       const data = await res.json();
+      if (!res.ok) throw new Error(data.message || "Login failed");
 
-      if (!res.ok) throw new Error(data.message || "Invalid credentials");
+      localStorage.setItem("officeToken", data.token);
+      localStorage.setItem("officeUser", JSON.stringify(data.user));
 
-localStorage.setItem("officeToken", data.token);
-localStorage.setItem("officeUser", JSON.stringify(data.user)); // ⭐ THIS IS THE FIX
-onLogin(data.user);
+      onLogin(data.user);
     } catch (err) {
+      console.error("Login error:", err);
       setError(err.message);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -44,7 +50,6 @@ onLogin(data.user);
             className="border p-3 rounded-lg"
             required
           />
-
           <input
             type="password"
             placeholder="Password"
@@ -53,12 +58,12 @@ onLogin(data.user);
             className="border p-3 rounded-lg"
             required
           />
-
           <button
             type="submit"
-            className="bg-green-500 text-white font-bold py-3 rounded-lg hover:bg-green-600 transition"
+            disabled={loading}
+            className={`bg-green-500 text-white font-bold py-3 rounded-lg transition hover:bg-green-600 ${loading ? "opacity-70 cursor-not-allowed" : ""}`}
           >
-            Login
+            {loading ? "Logging in..." : "Login"}
           </button>
         </form>
 
