@@ -124,12 +124,18 @@ const fetchAuditTrail = async () => {
   try {
     let url = `${API_BASE}/audit-trail`;
 
-    // Only pass office filter for Office Staff
+    // Include office for Office Staff only
     if (currentUser?.role === "Office Staff") {
       url += `?office=${encodeURIComponent(currentUser.office)}`;
     }
 
-    const res = await fetch(url);
+    const token = localStorage.getItem("officeToken");
+    const res = await fetch(url, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
     if (!res.ok) {
       console.warn("Audit trail not found, skipping:", res.status);
       setAuditTrail([]);
@@ -569,7 +575,7 @@ const saveUser = async (userData) => {
                   <td className="px-3 py-1 border-b">{a.visitorName}</td>
                   <td className="px-3 py-1 border-b">{a.action}</td>
                   <td className="px-3 py-1 border-b">
-  {a.performedBy || (currentUser?.role === "Office Staff" ? currentUser.name : "System")}
+  {a.performedBy || "System"}
 </td>
                   <td className="px-3 py-1 border-b">{new Date(a.timestamp).toLocaleString()}</td>
                 </tr>
