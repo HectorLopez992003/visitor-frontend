@@ -181,6 +181,8 @@ const fetchVisitors = async () => {
 
 // Auto refresh visitors & audit
 useEffect(() => {
+  fetchVisitors();
+  fetchAuditTrail(); // fetch immediately
   const interval = setInterval(() => {
     fetchVisitors();
     fetchAuditTrail();
@@ -566,7 +568,9 @@ const saveUser = async (userData) => {
                 <tr key={a._id}>
                   <td className="px-3 py-1 border-b">{a.visitorName}</td>
                   <td className="px-3 py-1 border-b">{a.action}</td>
-                  <td className="px-3 py-1 border-b">{a.performedBy}</td>
+                  <td className="px-3 py-1 border-b">
+  {a.performedBy || (currentUser?.role === "Office Staff" ? currentUser.name : "System")}
+</td>
                   <td className="px-3 py-1 border-b">{new Date(a.timestamp).toLocaleString()}</td>
                 </tr>
               ))}
